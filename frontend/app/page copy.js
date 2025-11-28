@@ -23,70 +23,12 @@ export default function Home() {
   const [plan, setPlan] = useState("");
   const [pendingInstruction, setPendingInstruction] = useState("");
 
-  // NEW: Error detection states
-  const [errors, setErrors] = useState({
-    missingImports: [],
-    missingComponents: [],
-    buildErrors: [],
-    runtimeErrors: [],
-  });
-  const [hasErrors, setHasErrors] = useState(false);
-  const [autoFixing, setAutoFixing] = useState(false);
-  const [showErrorPanel, setShowErrorPanel] = useState(false);
-
-  // Iteration mode states
-  const [mode, setMode] = useState("new");
+  // NEW: Iteration mode states
+  const [mode, setMode] = useState("new"); // "new" or "iterate"
   const [iterationCount, setIterationCount] = useState(0);
   const [projectContext, setProjectContext] = useState(null);
-
-  // NEW: Check for errors periodically when server is running
-  useEffect(() => {
-    if (running) {
-      const interval = setInterval(checkForErrors, 5000); // Check every 5 seconds
-      return () => clearInterval(interval);
-    }
-  }, [running]);
-
-  // NEW: Fetch errors from backend
-  const checkForErrors = async () => {
-    try {
-      const response = await fetch("http://localhost:3001/api/errors");
-      const data = await response.json();
-      setErrors(data.errors);
-      setHasErrors(data.hasErrors);
-
-      if (data.hasErrors && !showErrorPanel) {
-        setShowErrorPanel(true);
-      }
-    } catch (error) {
-      console.error("Error checking for errors:", error);
-    }
-  };
-
-  // NEW: Trigger auto-fix
-  const triggerAutoFix = async () => {
-    setAutoFixing(true);
-    try {
-      const response = await fetch("http://localhost:3001/api/auto-fix", {
-        method: "POST",
-      });
-      const data = await response.json();
-
-      if (data.success && data.fixed) {
-        alert("✅ Auto-fix completed! Reloading files...");
-        await fetchFiles();
-        await fetchProjectTree();
-        setShowErrorPanel(false);
-        setHasErrors(false);
-      } else if (data.needsFix === false) {
-        alert("✅ No errors detected!");
-      }
-    } catch (error) {
-      alert("Error during auto-fix: " + error.message);
-    } finally {
-      setAutoFixing(false);
-    }
-  };
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffData, setDiffData] = useState(null);
 
   const checkServerStatus = async () => {
     try {
@@ -94,11 +36,6 @@ export default function Home() {
       const data = await response.json();
       setRunning(data.running);
       setServerUrl(data.url);
-
-      // NEW: Update error status
-      if (data.hasErrors) {
-        await checkForErrors();
-      }
     } catch (error) {
       console.error("Error checking status:", error);
     }
@@ -109,19 +46,8 @@ export default function Home() {
       const response = await fetch("http://localhost:3001/api/project-tree");
       const data = await response.json();
       setProjectTree(data.tree || []);
-      fetchFiles();
     } catch (error) {
       console.error("Error fetching tree:", error);
-    }
-  };
-
-  const fetchFiles = async () => {
-    try {
-      const filesResponse = await fetch("http://localhost:3001/api/files");
-      const filesData = await filesResponse.json();
-      setGeneratedFiles(filesData.files);
-    } catch (error) {
-      console.error("Error fetching files:", error);
     }
   };
 
@@ -131,8 +57,10 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+  // Check if project exists to enable iterate mode
   useEffect(() => {
     if (generatedFiles.length > 0) {
+      // Project exists, can use iterate mode
       setMode("iterate");
     }
   }, [generatedFiles]);
@@ -186,7 +114,9 @@ export default function Home() {
         setLoading(false);
       } else if (data.success) {
         setHistory(data.history);
-        await fetchFiles();
+        const filesResponse = await fetch("http://localhost:3001/api/files");
+        const filesData = await filesResponse.json();
+        setGeneratedFiles(filesData.files);
         await fetchProjectTree();
 
         if (mode === "iterate") {
@@ -222,7 +152,9 @@ export default function Home() {
 
       if (data.success) {
         setHistory(data.history);
-        await fetchFiles();
+        const filesResponse = await fetch("http://localhost:3001/api/files");
+        const filesData = await filesResponse.json();
+        setGeneratedFiles(filesData.files);
         await fetchProjectTree();
 
         if (mode === "iterate") {
@@ -247,23 +179,34 @@ export default function Home() {
     if (newMode === "new") {
       if (generatedFiles.length > 0) {
         if (
-          !confirm(
-            "⚠️ Warning: Switching to 'New Project' will DELETE the entire existing project and start fresh.\n\nThis will remove:\n- All generated files\n- Project context\n- All iterations\n\nAre you sure you want to continue?"
-          )
+          !confirm("Switching to 'New Project' will start fresh. Continue?")
         ) {
           return;
         }
-        // Clear the file state since we're starting fresh
-        setGeneratedFiles([]);
-        setProjectTree([]);
-        setSelectedFile(null);
-        setEditContent("");
-        setProjectContext(null);
       }
       setIterationCount(0);
     }
     setMode(newMode);
   };
+
+  const viewDiff = async (filePath, newContent) => {
+    try {
+      const response = await fetch("http://localhost:3001/api/diff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filePath, newContent }),
+      });
+
+      const diff = await response.json();
+      setDiffData(diff);
+      setShowDiff(true);
+    } catch (error) {
+      alert("Error loading diff: " + error.message);
+    }
+  };
+
+  // ... (keep all existing functions: installDependencies, runProject, stopProject,
+  // openFileForEdit, saveFile, deleteFile, deployToVercel, renderTree)
 
   const installDependencies = async () => {
     if (generatedFiles.length === 0) {
@@ -299,9 +242,6 @@ export default function Home() {
         setServerUrl(data.url);
         alert("✅ Server started at " + data.url);
         window.open(data.url, "_blank");
-
-        // Start checking for errors after a delay
-        setTimeout(checkForErrors, 3000);
       } else {
         alert("❌ Error: " + data.error);
       }
@@ -318,8 +258,6 @@ export default function Home() {
       if (response.ok) {
         setRunning(false);
         setServerUrl(null);
-        setShowErrorPanel(false);
-        setHasErrors(false);
         alert("✅ Server stopped");
       }
     } catch (error) {
@@ -356,7 +294,9 @@ export default function Home() {
       const data = await response.json();
       if (data.success) {
         alert("✅ File saved successfully!");
-        await fetchFiles();
+        const filesResponse = await fetch("http://localhost:3001/api/files");
+        const filesData = await filesResponse.json();
+        setGeneratedFiles(filesData.files);
       } else {
         alert("❌ Error: " + data.error);
       }
@@ -379,7 +319,9 @@ export default function Home() {
       const data = await response.json();
       if (data.success) {
         alert("✅ File deleted");
-        await fetchFiles();
+        const filesResponse = await fetch("http://localhost:3001/api/files");
+        const filesData = await filesResponse.json();
+        setGeneratedFiles(filesData.files);
         await fetchProjectTree();
         if (selectedFile === filePath) {
           setSelectedFile(null);
@@ -457,140 +399,14 @@ export default function Home() {
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800">
-                🤖 AI Agent Website Builder
-              </h1>
-              <p className="text-slate-600 text-sm mt-1">
-                Generate • Edit • Preview • Deploy
-              </p>
-            </div>
-
-            {/* NEW: Error indicator */}
-            {hasErrors && (
-              <div className="flex items-center gap-3">
-                <div className="bg-red-50 border border-red-200 px-4 py-2 rounded-lg flex items-center gap-2">
-                  <span className="text-red-600 text-sm font-medium">
-                    ⚠️ {Object.values(errors).flat().length} Errors Detected
-                  </span>
-                  <button
-                    onClick={() => setShowErrorPanel(!showErrorPanel)}
-                    className="text-red-600 hover:text-red-800 text-xs underline"
-                  >
-                    {showErrorPanel ? "Hide" : "View"}
-                  </button>
-                </div>
-                <button
-                  onClick={triggerAutoFix}
-                  disabled={autoFixing}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-slate-300"
-                >
-                  {autoFixing ? "🔧 Fixing..." : "🔧 Auto-Fix"}
-                </button>
-              </div>
-            )}
-          </div>
+          <h1 className="text-3xl font-bold text-slate-800">
+            🤖 AI Agent Website Builder
+          </h1>
+          <p className="text-slate-600 text-sm mt-1">
+            Generate • Edit • Preview • Deploy
+          </p>
         </div>
       </div>
-
-      {/* NEW: Error Panel */}
-      {showErrorPanel && hasErrors && (
-        <div className="bg-red-50 border-b border-red-200">
-          <div className="max-w-7xl mx-auto px-8 py-4">
-            <div className="flex items-start justify-between mb-3">
-              <h3 className="text-lg font-bold text-red-800">
-                🚨 Error Report
-              </h3>
-              <button
-                onClick={() => setShowErrorPanel(false)}
-                className="text-red-600 hover:text-red-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {errors.missingImports.length > 0 && (
-                <div className="bg-white p-4 rounded-lg border border-red-200">
-                  <h4 className="font-semibold text-red-700 mb-2">
-                    📦 Missing Imports ({errors.missingImports.length})
-                  </h4>
-                  <ul className="text-sm text-red-600 space-y-1">
-                    {errors.missingImports.map((imp, idx) => (
-                      <li key={idx} className="font-mono">
-                        • {imp}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {errors.missingComponents.length > 0 && (
-                <div className="bg-white p-4 rounded-lg border border-red-200">
-                  <h4 className="font-semibold text-red-700 mb-2">
-                    🧩 Missing Components ({errors.missingComponents.length})
-                  </h4>
-                  <ul className="text-sm text-red-600 space-y-1">
-                    {errors.missingComponents.slice(0, 3).map((comp, idx) => (
-                      <li key={idx} className="font-mono text-xs">
-                        • {comp}
-                      </li>
-                    ))}
-                    {errors.missingComponents.length > 3 && (
-                      <li className="text-xs">
-                        ...and {errors.missingComponents.length - 3} more
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-
-              {errors.buildErrors.length > 0 && (
-                <div className="bg-white p-4 rounded-lg border border-red-200">
-                  <h4 className="font-semibold text-red-700 mb-2">
-                    🔨 Build Errors ({errors.buildErrors.length})
-                  </h4>
-                  <ul className="text-sm text-red-600 space-y-1">
-                    {errors.buildErrors.slice(0, 2).map((err, idx) => (
-                      <li key={idx} className="font-mono text-xs">
-                        • {err.substring(0, 80)}...
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {errors.runtimeErrors.length > 0 && (
-                <div className="bg-white p-4 rounded-lg border border-red-200">
-                  <h4 className="font-semibold text-red-700 mb-2">
-                    ⚡ Runtime Errors ({errors.runtimeErrors.length})
-                  </h4>
-                  <ul className="text-sm text-red-600 space-y-1">
-                    {errors.runtimeErrors.slice(0, 2).map((err, idx) => (
-                      <li key={idx} className="font-mono text-xs">
-                        • {err.substring(0, 80)}...
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4">
-              <button
-                onClick={triggerAutoFix}
-                disabled={autoFixing}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700 disabled:bg-slate-300"
-              >
-                {autoFixing
-                  ? "🔧 Auto-Fixing Errors..."
-                  : "🔧 Auto-Fix All Errors"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Navigation Tabs */}
       <div className="bg-white border-b border-slate-200">
@@ -602,7 +418,7 @@ export default function Home() {
                 id: "files",
                 label: "📁 Files",
                 icon: "",
-                disabled: false,
+                disabled: generatedFiles.length === 0,
               },
               {
                 id: "editor",
@@ -699,6 +515,57 @@ export default function Home() {
           </div>
         )}
 
+        {/* Diff Modal */}
+        {showDiff && diffData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="bg-slate-800 text-white p-4">
+                <h2 className="text-xl font-bold">
+                  📊 File Changes: {diffData.filePath}
+                </h2>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                {diffData.isNew ? (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded">
+                    <p className="text-green-800">
+                      ✨ New file will be created
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="font-semibold text-red-700 mb-2">
+                        ❌ Before
+                      </h3>
+                      <pre className="text-xs bg-red-50 p-3 rounded border border-red-200 overflow-x-auto">
+                        {diffData.oldLines.join("\n")}
+                      </pre>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-green-700 mb-2">
+                        ✅ After
+                      </h3>
+                      <pre className="text-xs bg-green-50 p-3 rounded border border-green-200 overflow-x-auto">
+                        {diffData.newLines.join("\n")}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200 p-4 bg-slate-50">
+                <button
+                  onClick={() => setShowDiff(false)}
+                  className="w-full bg-slate-600 text-white py-2 px-4 rounded-lg hover:bg-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Agent Tab */}
         {activeTab === "agent" && (
           <div className="space-y-6">
@@ -723,11 +590,6 @@ export default function Home() {
                   <div className="text-xs text-slate-600 mt-1">
                     Start from scratch
                   </div>
-                  {generatedFiles.length > 0 && (
-                    <div className="mt-2 text-xs text-red-600 font-medium">
-                      ⚠️ Will delete existing project
-                    </div>
-                  )}
                 </button>
 
                 <button
@@ -750,11 +612,6 @@ export default function Home() {
                       ? "Generate a project first"
                       : `Modify existing (${iterationCount}/5 iterations)`}
                   </div>
-                  {mode === "iterate" && generatedFiles.length > 0 && (
-                    <div className="mt-2 text-xs text-green-600 font-medium">
-                      ✅ Preserves existing files
-                    </div>
-                  )}
                 </button>
               </div>
             </div>
@@ -790,7 +647,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Project Controls */}
+            {/* Rest of Agent Tab - keep existing code for Project Controls and Agent Process */}
             {generatedFiles.length > 0 && (
               <div className="bg-white rounded-lg shadow-lg p-6">
                 <h2 className="text-xl font-bold text-slate-800 mb-4">
@@ -843,10 +700,9 @@ export default function Home() {
               </div>
             )}
 
-            {/* Agent Process History */}
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-2xl font-bold text-slate-800 mb-4">
-                📄 Agent Process
+                🔄 Agent Process
               </h2>
 
               {history.length === 0 && !loading && (
@@ -901,7 +757,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
         {/* Files Tab */}
         {activeTab === "files" && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -958,7 +813,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
         {/* Editor Tab */}
         {activeTab === "editor" && selectedFile && (
           <div className="bg-white rounded-lg shadow-lg p-6">
@@ -1007,22 +861,14 @@ export default function Home() {
               <h2 className="text-2xl font-bold text-slate-800">
                 👁️ Live Preview
               </h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={checkForErrors}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors text-sm"
-                >
-                  🔍 Check Errors
-                </button>
-                <a
-                  href={serverUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  🔗 Open in New Tab
-                </a>
-              </div>
+              <a
+                href={serverUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                🔗 Open in New Tab
+              </a>
             </div>
             {serverUrl ? (
               <iframe
@@ -1047,7 +893,7 @@ export default function Home() {
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
               <p className="text-sm text-blue-800">
-                <strong>🔐 Note:</strong> Get your Vercel token from{" "}
+                <strong>📝 Note:</strong> Get your Vercel token from{" "}
                 <a
                   href="https://vercel.com/account/tokens"
                   target="_blank"
