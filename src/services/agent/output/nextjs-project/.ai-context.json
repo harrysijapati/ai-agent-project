@@ -1,0 +1,40 @@
+{
+  "pages": [
+    {
+      "path": "app/page.js (home)",
+      "name": "home",
+      "preview": "import Header from '../components/Header'\nimport Hero from '../components/Hero'\nimport Features from '../components/Features'\nimport Footer from '../components/Footer'\n\nexport default function Home() ",
+      "hasErrors": null
+    }
+  ],
+  "components": [
+    {
+      "name": "Features",
+      "path": "components/Features.js",
+      "preview": "export default function Features() {\n  const features = [\n    {\n      title: \"Fast Performance\",\n      description: \"Built with Next.js 14 for optimal"
+    },
+    {
+      "name": "Footer",
+      "path": "components/Footer.js",
+      "preview": "export default function Footer() {\n  return (\n    <footer className=\"bg-gray-900 text-white py-12\">\n      <div className=\"max-w-6xl mx-auto px-4 sm:px"
+    },
+    {
+      "name": "Header",
+      "path": "components/Header.js",
+      "preview": "\"use client\";\nimport { useState } from 'react';\nimport Link from 'next/link';\n\nexport default function Header() {\n  const [isOpen, setIsOpen] = useSta"
+    },
+    {
+      "name": "Hero",
+      "path": "components/Hero.js",
+      "preview": "export default function Hero() {\n  return (\n    <section className=\"bg-gradient-to-r from-blue-600 to-purple-600 text-white py-20\">\n      <div classNa"
+    }
+  ],
+  "structure": "Next.js 14 App Router",
+  "style": "Tailwind CSS",
+  "errors": [],
+  "metadata": {
+    "createdAt": "2025-11-28T20:05:11.728Z",
+    "lastModified": "2025-11-28T20:05:11.728Z",
+    "totalIterations": 0
+  }
+}
